@@ -1,6 +1,22 @@
 import { getAlchemy } from "@/lib/clients";
 import useSWR from "swr";
-import { getAlchemyImageSrc, getNftAsset } from "@/lib/utils";
+import { Nft, OwnedNft } from "alchemy-sdk";
+
+function getAlchemyImageSrc(token?: Nft | OwnedNft) {
+  // mint count for selected tokens
+
+  if (!token) {
+    return "/no-img.jpg";
+  }
+
+  const src =
+    token.media[0]?.gateway ||
+    token.media[0]?.thumbnail ||
+    token.contract?.openSea?.imageUrl ||
+    "/no-img.jpg";
+
+  return src;
+}
 
 interface FormatImageReturnParams {
   imageData?: string | string[];
@@ -17,42 +33,17 @@ function formatImageReturn({ imageData, loading }: FormatImageReturnParams): str
   return typeof imageData === "string" ? [imageData] : imageData;
 }
 
-interface CustomImplementation {
+type UseNFTParams = {
+  tokenId: number;
   contractAddress: `0x${string}`;
-}
+  chainId: number;
+};
 
 export const useNft = ({
   tokenId,
-  apiEndpoint,
-  refreshInterval = 120000,
-  cacheKey,
   contractAddress,
-  hasCustomImplementation,
   chainId,
-}: {
-  tokenId: number;
-  apiEndpoint?: string;
-  refreshInterval?: number;
-  cacheKey?: string;
-  contractAddress: `0x${string}`;
-  hasCustomImplementation: boolean;
-  chainId: number;
-}) => {
-  let key = null;
-  if (hasCustomImplementation) key = cacheKey ?? `getNftAsset-${tokenId}`;
-
-  const {
-    data: customNftData,
-    isLoading: customNftLoading,
-    error: customNftError,
-  } = useSWR(key, () => getNftAsset(tokenId, apiEndpoint), {
-    refreshInterval: refreshInterval,
-    shouldRetryOnError: false,
-    retry: 0,
-  });
-
-  if (customNftError) console.log("CUSTOM NFT DATA FETCH ERROR: ", customNftError);
-
+}: UseNFTParams) => {
   const { data: nftMetadata, isLoading: nftMetadataLoading } = useSWR(
     `nftMetadata/${contractAddress}/${tokenId}`,
     (url: string) => {
@@ -62,13 +53,10 @@ export const useNft = ({
     }
   );
 
-  const loading = hasCustomImplementation ? customNftLoading : nftMetadataLoading;
+  const loading =  nftMetadataLoading;
 
   return {
-    data:
-      hasCustomImplementation && !customNftError
-        ? formatImageReturn({ imageData: customNftData, loading })
-        : formatImageReturn({ imageData: getAlchemyImageSrc(nftMetadata?.[0]), loading }),
+    data: formatImageReturn({ imageData: getAlchemyImageSrc(nftMetadata?.[0]), loading }),
     nftMetadata: nftMetadata?.[0],
     loading,
   };

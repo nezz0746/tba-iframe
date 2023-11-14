@@ -6,7 +6,7 @@ import { isNil } from "lodash";
 import { TokenboundClient } from "@tokenbound/sdk";
 import { useNft } from "@/lib/hooks";
 import { TokenDetail } from "./TokenDetail";
-import { HAS_CUSTOM_IMPLEMENTATION, chainIdToRpcUrl, implementationAddress, tokenboundAddress } from "@/lib/constants";
+import { chainIdToRpcUrl, implementationAddress, tokenboundAddress } from "@/lib/constants";
 import { getAlchemy, getPublicClient } from "@/lib/clients";
 // Registry ABI
 import { tokenboundAbi } from "@/lib/abi";
@@ -89,7 +89,6 @@ export default function Token({ params, searchParams }: TokenParams) {
   } = useNft({
     tokenId: parseInt(tokenId as string),
     contractAddress: contractAddress as `0x${string}`,
-    hasCustomImplementation: HAS_CUSTOM_IMPLEMENTATION,
     chainId: mainChainId,
   });
 
