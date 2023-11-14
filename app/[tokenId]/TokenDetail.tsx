@@ -1,18 +1,15 @@
 import { Variants, motion } from "framer-motion";
-import { GalverseLogo, TokenboundLogo } from "@/components/icon";
 import { Panel } from "./Panel";
-import { TbaOwnedNft } from "@/lib/types";
+import { TbaOwnedNft } from "./page";
 
 interface Props {
   className?: string;
   isOpen: boolean;
   handleOpenClose: (arg0: boolean) => void;
-  approvalTokensCount?: number;
   account?: string;
   tokens: TbaOwnedNft[];
   title: string;
   chainId: number;
-  logo?: string;
 }
 
 const variants = {
@@ -20,52 +17,25 @@ const variants = {
   open: { y: "0", transition: { duration: 0.75 }, height: "85%" },
 } as Variants;
 
-const iconVariant = {
-  hover: {
-    opacity: 1,
-    boxShadow: "0px 1px 14px 0px rgba(0, 0, 0, 0.12)",
-    transition: { duration: 0.3, ease: "easeInOut" },
-  },
-  unHovered: {
-    opacity: 0.7,
-    boxShadow: "none",
-    transition: { duration: 0.3, ease: "easeInOut" },
-  },
-};
-
-type LogoType = {
-  [logo: string]: any;
-};
-
-const Logo: LogoType = {
-  DEFAULT: TokenboundLogo,
-  GALVERSE: GalverseLogo,
-};
-
 export const TokenDetail = ({
   className,
   isOpen,
   handleOpenClose,
-  approvalTokensCount,
   account,
   tokens,
   title,
   chainId,
-  logo,
 }: Props) => {
   let currentAnimate = isOpen ? "open" : "closed";
-
-  const CustomLogo = logo ? Logo[logo.toUpperCase()] : Logo["DEFAULT"];
 
   return (
     <div className={className}>
       <motion.div
-        className="absolute left-4 top-4 z-10 rounded-full cursor-pointer"
+        className="absolute left-4 top-4 z-10 rounded-full cursor-pointer p-2 bg-white bg-opacity-50 hover:bg-opacity-80"
         whileHover="hover"
-        variants={iconVariant}
         initial="unHovered"
       >
-        <CustomLogo onClick={() => handleOpenClose(!isOpen)} />
+        <img src="/logo.png" className="h-7 w-7" onClick={( )=> handleOpenClose(!isOpen)}/>
       </motion.div>
       {isOpen && (
         <motion.div
@@ -75,7 +45,6 @@ export const TokenDetail = ({
           initial="closed"
         >
           <Panel
-            approvalTokensCount={approvalTokensCount}
             account={account}
             tokens={tokens}
             title={title}

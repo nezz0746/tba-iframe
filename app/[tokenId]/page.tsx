@@ -4,19 +4,24 @@ import { useEffect, useState } from "react";
 import useSWR from "swr";
 import { isNil } from "lodash";
 import { TokenboundClient } from "@tokenbound/sdk";
-import { getAccount, getAccountStatus, getLensNfts, getNfts } from "@/lib/utils";
-import { TbLogo } from "@/components/icon";
-import { useGetApprovals, useNft } from "@/lib/hooks";
-import { TbaOwnedNft } from "@/lib/types";
-import { getAddress } from "viem";
+import { useNft } from "@/lib/hooks";
 import { TokenDetail } from "./TokenDetail";
-import { HAS_CUSTOM_IMPLEMENTATION, alchemyApiKey } from "@/lib/constants";
+import { HAS_CUSTOM_IMPLEMENTATION, chainIdToRpcUrl, implementationAddress, tokenboundAddress } from "@/lib/constants";
+import { getAlchemy, getPublicClient } from "@/lib/clients";
+// Registry ABI
+import { tokenboundAbi } from "@/lib/abi";
+import { formatBytes32String } from "ethers/lib/utils";
+import { NftOrdering, OwnedNft } from "alchemy-sdk";
+
+export interface TbaOwnedNft extends OwnedNft {
+  hasApprovals?: boolean | undefined;
+  chainId: number;
+  [key: string]: any;
+}
 
 interface TokenParams {
   params: {
     tokenId: string;
-    contractAddress: string;
-    chainId: string;
   };
   searchParams: {
     disableloading: string;
@@ -24,15 +29,58 @@ interface TokenParams {
   };
 }
 
+const contractAddress = "0x138C677903ACf06fcaEb519580739413A2dE54eB";
+const mainChainId = 5;
+const relayChainId = 80001;
+const implementation =  implementationAddress;
+const registry = tokenboundAddress
+
+async function getNfts(chainId: number, account: string) {
+  try {
+    const alchemy = getAlchemy(chainId);
+    const response = await alchemy.nft.getNftsForOwner(account, {
+      orderBy: NftOrdering.TRANSFERTIME,
+    });
+    if (!response.ownedNfts) {
+      return [];
+    }
+
+    return response.ownedNfts.reverse();
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+}
+
+
+async function getAccount(
+  tokenId: number,
+  contractAddress: string,
+  chainId: number
+) {
+  try {
+    const providerUrl = chainIdToRpcUrl[chainId];
+    const publicClient = getPublicClient(chainId, providerUrl);
+    const response = (await publicClient.readContract({
+      address: registry as `0x${string}`,
+      abi: tokenboundAbi,
+      functionName: "account",
+      args: [implementation, formatBytes32String(""), String(chainId), contractAddress, tokenId],
+    })) as string;
+    return { data: response };
+  } catch (err) {
+    console.error(err);
+    return { error: `failed getting account for token $id: {tokenId}` };
+  }
+}
+
 export default function Token({ params, searchParams }: TokenParams) {
   const [imagesLoaded, setImagesLoaded] = useState(false);
   const [nfts, setNfts] = useState<TbaOwnedNft[]>([]);
-  const [lensNfts, setLensNfts] = useState<TbaOwnedNft[]>([]);
-  const { tokenId, contractAddress, chainId } = params;
+  const { tokenId } = params;
   const { disableloading, logo } = searchParams;
   const [showTokenDetail, setShowTokenDetail] = useState(false);
-  const chainIdNumber = parseInt(chainId);
-  const tokenboundClient = new TokenboundClient({ chainId: chainIdNumber });
+  const tokenboundClient = new TokenboundClient({ chainId: mainChainId });
 
   const {
     data: nftImages,
@@ -40,9 +88,9 @@ export default function Token({ params, searchParams }: TokenParams) {
     loading: nftMetadataLoading,
   } = useNft({
     tokenId: parseInt(tokenId as string),
-    contractAddress: params.contractAddress as `0x${string}`,
+    contractAddress: contractAddress as `0x${string}`,
     hasCustomImplementation: HAS_CUSTOM_IMPLEMENTATION,
-    chainId: chainIdNumber,
+    chainId: mainChainId,
   });
 
   useEffect(() => {
@@ -68,7 +116,7 @@ export default function Token({ params, searchParams }: TokenParams) {
 
   // Fetch nft's TBA
   const { data: account } = useSWR(tokenId ? `/account/${tokenId}` : null, async () => {
-    const result = await getAccount(Number(tokenId), contractAddress, chainIdNumber);
+    const result = await getAccount(Number(tokenId), contractAddress, mainChainId);
     return result.data;
   });
 
@@ -78,62 +126,28 @@ export default function Token({ params, searchParams }: TokenParams) {
     async () => tokenboundClient.checkAccountDeployment({ accountAddress: account as `0x{string}` })
   );
 
-  const { data: isLocked } = useSWR(account ? `/account/${account}/locked` : null, async () => {
-    if (!accountIsDeployed) {
-      return false;
+  async function fetchNfts(account: string) {
+    const [chain_a_data, chain_b_data] = await Promise.all([
+      getNfts(mainChainId, account).then(data => data.map(nft => ({...nft, chainId: mainChainId}))),
+      getNfts(relayChainId, account).then(data => data.map(nft => ({...nft, chainId: relayChainId}))),
+    ]) as [TbaOwnedNft[], TbaOwnedNft[]];
+
+    if (chain_a_data || chain_b_data) {
+      let data: TbaOwnedNft[] = []
+      if(chain_a_data.length > 0) data = chain_a_data
+      if(chain_b_data.length > 0) data = [...data, ...chain_b_data]
+      
+      setNfts(data);
     }
-
-    const { data, error } = await getAccountStatus(chainIdNumber, account!);
-
-    return data ?? false;
-  });
+    
+  }
 
   // fetch nfts inside TBA
   useEffect(() => {
-    async function fetchNfts(account: string) {
-      const [data, lensData] = await Promise.all([
-        getNfts(chainIdNumber, account),
-        getLensNfts(account),
-      ]);
-      if (data) {
-        setNfts(data);
-      }
-      if (lensData) {
-        setLensNfts(lensData);
-      }
-    }
-
     if (account) {
       fetchNfts(account);
     }
-  }, [account, accountIsDeployed, chainIdNumber]);
-
-  const [tokens, setTokens] = useState<TbaOwnedNft[]>([]);
-  const allNfts = [...nfts, ...lensNfts];
-
-  const { data: approvalData } = useGetApprovals(allNfts, account, chainIdNumber);
-
-  useEffect(() => {
-    if (nfts !== undefined && nfts.length) {
-      nfts.map((token) => {
-        const foundApproval = approvalData?.find((item) => {
-          const contract = item.contract.address;
-          const tokenId = item.tokenId;
-          const hasApprovals = item.hasApprovals;
-          const matchedAddress = getAddress(contract) === getAddress(token.contract.address);
-          const matchedTokenId = String(tokenId) && String(token.tokenId);
-          if (matchedAddress && matchedTokenId && hasApprovals) {
-            return true;
-          }
-        });
-        token.hasApprovals = foundApproval?.hasApprovals || false;
-      });
-      setTokens(nfts);
-      if (lensNfts) {
-        setTokens([...nfts, ...lensNfts]);
-      }
-    }
-  }, [nfts, approvalData, lensNfts]);
+  }, [account, accountIsDeployed, mainChainId]);
 
   const showLoading = disableloading !== "true" && nftMetadataLoading;
 
@@ -145,18 +159,18 @@ export default function Token({ params, searchParams }: TokenParams) {
             <TokenDetail
               isOpen={showTokenDetail}
               handleOpenClose={setShowTokenDetail}
-              approvalTokensCount={approvalData?.filter((item) => item.hasApprovals).length}
               account={account}
-              tokens={tokens}
+              tokens={nfts}
               title={nftMetadata.title}
-              chainId={chainIdNumber}
-              logo={logo}
+              chainId={mainChainId}
             />
           )}
-          <div className="max-h-1080[px] relative h-full w-full max-w-[1080px]">
+          <div className="max-h-1080[px] relative h-full w-full max-w-[1080px] bg-black">
             {showLoading ? (
-              <div className="absolute left-[45%] top-[50%] z-10 h-20 w-20 -translate-x-[50%] -translate-y-[50%] animate-bounce">
-                <TbLogo />
+              <div className="z-10 w-full h-full flex flex-col justify-center items-center">
+                <div className="w-1/2 mt-[40%] ml-[25px] h-1/2">
+                  <img src="gaian_logo.png" className="animate-bounce" />
+                </div>
               </div>
             ) : (
               <div
@@ -165,7 +179,7 @@ export default function Token({ params, searchParams }: TokenParams) {
                 }`}
               >
                 {!isNil(nftImages) ? (
-                  nftImages.map((image, i) => (
+                  nftImages?.map((image, i) => (
                     <img
                       key={i}
                       className="col-span-1 col-start-1 row-span-1 row-start-1 translate-x-0"
