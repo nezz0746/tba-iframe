@@ -12,7 +12,7 @@ export const Tabs = ({ tabs, currentTab, onTabChange, ...props }: Props) => {
         return (
           <li
             className={`list-none text-base font-medium hover:cursor-pointer pb-1 ${
-              currentTab === tab ? "text-black border-b-2 border-black" : "text-tb-text-gray"
+              currentTab === tab ? "text-white border-b-2 border-white" : "text-tb-text-gray"
             }`}
             key={tab}
             onClick={() => onTabChange(tab)}
